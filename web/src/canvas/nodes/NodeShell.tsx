@@ -13,7 +13,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Button } from "../../components/BaseControls";
+import { Button, Input } from "../../components/BaseControls";
 import { ICON_BTN_SM } from "../../components/controls";
 import { FaceAlert } from "../../components/FaceAlert";
 import { Icon } from "../../components/Icon";
@@ -26,9 +26,11 @@ import {
   handleSignature,
   isPinned,
   isResizable,
+  MAX_NAME_LEN,
   nodeMinSize,
   PORT_STEP_PX,
   PORT_TOP_PX,
+  patchNode,
   pin,
   portLabel,
   portsOf,
@@ -238,9 +240,7 @@ export function NodeShell({
             aria-hidden
             className={`size-[7px] shrink-0 rounded-full ${CATEGORY_STRIP[category]}`}
           />
-          <span className="truncate text-[12.5px] font-semibold tracking-[0.01em] text-ink">
-            {node.label ?? title}
-          </span>
+          <NodeTitle node={node} title={title} />
           {badge !== undefined && (
             <span className="shrink-0 font-mono text-[10.5px] text-ink-faint">{badge}</span>
           )}
@@ -316,6 +316,73 @@ export function NodeShell({
         ))}
       </PortalContainerProvider>
     </div>
+  );
+}
+
+function NodeTitle({ node, title }: { node: PatchNode; title: string }) {
+  const workspace = useWorkspaceContext();
+  const [draft, setDraft] = useState<string | null>(null);
+  const cancelled = useRef(false);
+  const name = node.label ?? title;
+  const className =
+    "relative z-10 min-w-0 truncate text-[12.5px] font-semibold tracking-[0.01em] text-ink";
+  const start = () => {
+    cancelled.current = false;
+    setDraft(name);
+  };
+  const finish = () => {
+    setDraft(null);
+    const next = draft?.trim() ?? "";
+    if (!cancelled.current && next !== name && (next !== "" || node.label != null)) {
+      workspace.edit((snapshot) => ({
+        ...snapshot,
+        graph: patchNode(snapshot.graph, node.id, (current) => ({
+          ...current,
+          label: next || undefined,
+        })),
+      }));
+    }
+  };
+
+  return draft === null ? (
+    <Button
+      type="button"
+      className={`${className} cursor-text text-left`}
+      aria-label={`Rename ${name}`}
+      title="Double-click to rename"
+      onDoubleClick={start}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " " || event.key === "F2") {
+          event.preventDefault();
+          event.stopPropagation();
+          start();
+        }
+      }}
+    >
+      {name}
+    </Button>
+  ) : (
+    <Input
+      autoFocus
+      className={`${className} nodrag nopan w-32 rounded-xs bg-panel px-1 outline outline-accent`}
+      aria-label="Node name"
+      maxLength={MAX_NAME_LEN}
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onFocus={(event) => event.currentTarget.select()}
+      onBlur={finish}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.nativeEvent.isComposing) {
+          return;
+        }
+        if (event.key === "Enter" || event.key === "Escape") {
+          event.preventDefault();
+          cancelled.current = event.key === "Escape";
+          event.currentTarget.blur();
+        }
+      }}
+    />
   );
 }
 
